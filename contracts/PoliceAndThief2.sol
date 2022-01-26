@@ -89,10 +89,10 @@ contract PoliceAndThief2 is IPoliceAndThief, ERC721Enumerable, Ownable, Pauseabl
 
     function getAllTypes() external view returns (uint[]) {
         uint[] memory ret = new uint[](totalSupply);
-        for (uint i = 0; i < totalSUpply; i++) {
+        for (uint i = 0; i < totalSupply; i++) {
             ret[i] = tokenType[i];
         }
-        
+
         return ret;
     }
 
