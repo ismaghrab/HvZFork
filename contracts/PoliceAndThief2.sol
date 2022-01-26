@@ -87,6 +87,15 @@ contract PoliceAndThief2 is IPoliceAndThief, ERC721Enumerable, Ownable, Pauseabl
         return _humansURI;
     }
 
+    function getAllTypes() external view returns (uint[]) {
+        uint[] memory ret = new uint[](totalSupply);
+        for (uint i = 0; i < totalSUpply; i++) {
+            ret[i] = tokenType[i];
+        }
+        
+        return ret;
+    }
+
 
     function setRandomSource(ISeed _seed) external onlyOwner {
         randomSource = _seed;
@@ -192,7 +201,7 @@ contract PoliceAndThief2 is IPoliceAndThief, ERC721Enumerable, Ownable, Pauseabl
         if(isWhitelist == true){
             amountMintedWhitelisted[msg.sender] += amount;
         }
-        
+
         if (totalLootCost > 0) loot.burn(_msgSender(), totalLootCost);
 
         for (uint i = 0; i < owners.length; i++) {
