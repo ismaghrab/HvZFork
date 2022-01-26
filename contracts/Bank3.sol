@@ -6,11 +6,14 @@ import "./IERC721Receiver.sol";
 import "./Pauseable.sol";
 import "./PoliceAndThief.sol";
 import "./LOOT.sol";
+import "./IBank.sol";
 
-contract Bank is Ownable, IERC721Receiver, Pauseable {
+contract Bank3 is Ownable, IERC721Receiver, Pauseable {
 
     // maximum alpha score for a Police
     uint8 public constant MAX_ALPHA = 8;
+
+    uint public constant TAX_CLAIM = 1 ether;
 
     // struct to store a stake's token, owner, and earning values
     struct Stake {
@@ -34,6 +37,9 @@ contract Bank is Ownable, IERC721Receiver, Pauseable {
     mapping(uint256 => Stake[]) public pack;
     // tracks location of each Police in Pack
     mapping(uint256 => uint256) public packIndices;
+
+    mapping(address => uint[]) private bags;
+
     // total alpha scores staked
     uint256 public totalAlphaStaked = 0;
     // any rewards distributed when no wolves are staked
@@ -42,13 +48,16 @@ contract Bank is Ownable, IERC721Receiver, Pauseable {
     uint256 public lootPerAlpha = 0;
 
     // thief earn 10000 $LOOT per day
-    uint256 public DAILY_LOOT_RATE = 10000 ether;
+    uint256 public DAILY_LOOT_RATE = 80000 ether;
     // thief must have 2 days worth of $LOOT to unstake or else it's too cold
-    uint256 public MINIMUM_TO_EXIT = 2 days;
+    uint256 public MINIMUM_TO_EXIT = 1 minutes;
     // wolves take a 20% tax on all $LOOT claimed
     uint256 public constant LOOT_CLAIM_TAX_PERCENTAGE = 20;
     // there will only ever be (roughly) 2.4 billion $LOOT earned through staking
     uint256 public constant MAXIMUM_GLOBAL_LOOT = 2400000000 ether;
+
+    uint256 public whitelist_start_time = 0;
+    uint256 public public_start_time = 0;
 
     // amount of $LOOT earned so far
     uint256 public totalLootEarned;
@@ -61,6 +70,7 @@ contract Bank is Ownable, IERC721Receiver, Pauseable {
     bool public rescueEnabled = false;
 
     bool private _reentrant = false;
+    bool public canClaim = false;
 
     modifier nonReentrant() {
         require(!_reentrant, "No reentrancy");
@@ -69,13 +79,53 @@ contract Bank is Ownable, IERC721Receiver, Pauseable {
         _reentrant = false;
     }
 
+    address public swapper;
+
+    uint256 oldLastClaimTimestamp;
+
     /**
      * @param _game reference to the PoliceAndThief NFT contract
    * @param _loot reference to the $LOOT token
    */
-    constructor(PoliceAndThief _game, LOOT _loot) {
+    constructor(PoliceAndThief _game, LOOT _loot, address _swapper) {
         game = _game;
         loot = _loot;
+        swapper = _swapper;
+    }
+
+
+    function estimatedRevenuesOf(uint16[] calldata tokenIds) view external returns(uint) {
+        uint owed = 0;
+        for (uint256 i = 0; i < tokenIds.length; i++) {
+            if (isThief(tokenIds[i])) {
+                Stake memory stake = bank[tokenIds[i]];
+                uint newOwed = 0;
+                if (totalLootEarned < MAXIMUM_GLOBAL_LOOT) {
+                    newOwed = ((block.timestamp - stake.value) * DAILY_LOOT_RATE) / 1 minutes;
+                } else if (stake.value > lastClaimTimestamp) {
+                    newOwed = 0;
+                } else {
+                    newOwed = ((lastClaimTimestamp - stake.value) * DAILY_LOOT_RATE) / 1 minutes;
+                }
+                owed += (newOwed * (100 - LOOT_CLAIM_TAX_PERCENTAGE)) / 100;
+            } else {
+                uint256 alpha = _alphaForPolice(tokenIds[i]);
+                Stake memory stake = pack[alpha][packIndices[tokenIds[i]]];
+                owed += (alpha) * (lootPerAlpha - stake.value);
+            }
+        }
+        return owed;
+    }
+
+    function setOldTokenInfo(uint256 _tokenId, bool _isThief, address _tokenOwner, uint256 _value) external {
+        require(msg.sender == swapper || msg.sender == owner(), "only swpr || owner");
+
+        if (_isThief) {
+            _addThiefToBankWithTime(_tokenOwner, _tokenId, _value);
+        }
+        else {
+            _addPoliceToPack(_tokenOwner, _tokenId);
+        }
     }
 
     /***STAKING */
@@ -85,13 +135,14 @@ contract Bank is Ownable, IERC721Receiver, Pauseable {
      * @param account the address of the staker
    * @param tokenIds the IDs of the Thief and Polices to stake
    */
-    function addManyToBankAndPack(address account, uint16[] calldata tokenIds) external nonReentrant {
+    function addManyToBankAndPack(address account, uint16[] calldata tokenIds) external whenNotPaused nonReentrant {
         require((account == _msgSender() && account == tx.origin) || _msgSender() == address(game), "DONT GIVE YOUR TOKENS AWAY");
 
         for (uint i = 0; i < tokenIds.length; i++) {
             if (tokenIds[i] == 0) {
                 continue;
             }
+            _add(_msgSender(),tokenIds[i]);
 
             if (_msgSender() != address(game)) {// dont do this step if its a mint + stake
                 require(game.ownerOf(tokenIds[i]) == _msgSender(), "AINT YO TOKEN");
@@ -102,6 +153,22 @@ contract Bank is Ownable, IERC721Receiver, Pauseable {
                 _addThiefToBank(account, tokenIds[i]);
             else
                 _addPoliceToPack(account, tokenIds[i]);
+        }
+    }
+
+     function _add(address account, uint _tokenId) internal {
+        uint[] storage bag = bags[account];
+        bag.push(_tokenId);
+     }
+
+    function _remove(address account, uint _tokenId) internal {
+            uint[] storage bag = bags[account];
+            for (uint256 i = 0; i < bag.length; i++) {
+            if(bag[i] == _tokenId) {
+                bag[i] = bag[bag.length - 1];
+                bag.pop();
+                break;
+            }
         }
     }
 
@@ -120,6 +187,18 @@ contract Bank is Ownable, IERC721Receiver, Pauseable {
         emit TokenStaked(account, tokenId, block.timestamp);
     }
 
+    function _addThiefToBankWithTime(address account, uint256 tokenId, uint256 time) internal {
+        totalLootEarned += (time - lastClaimTimestamp) * totalThiefStaked * DAILY_LOOT_RATE / 1 minutes;
+
+        bank[tokenId] = Stake({
+        owner : account,
+        tokenId : uint16(tokenId),
+        value : uint80(time)
+        });
+        totalThiefStaked += 1;
+        emit TokenStaked(account, tokenId, time);
+    }
+
     /**
      * adds a single Police to the Pack
      * @param account the address of the staker
@@ -130,6 +209,7 @@ contract Bank is Ownable, IERC721Receiver, Pauseable {
         totalAlphaStaked += alpha;
         // Portion of earnings ranges from 8 to 5
         packIndices[tokenId] = pack[alpha].length;
+
         // Store the location of the police in the Pack
         pack[alpha].push(Stake({
         owner : account,
@@ -148,8 +228,11 @@ contract Bank is Ownable, IERC721Receiver, Pauseable {
      * @param tokenIds the IDs of the tokens to claim earnings from
    * @param unstake whether or not to unstake ALL of the tokens listed in tokenIds
    */
-    function claimManyFromBankAndPack(uint16[] calldata tokenIds, bool unstake) external nonReentrant whenNotPaused _updateEarnings {
+    function claimManyFromBankAndPack(uint16[] calldata tokenIds, bool unstake) payable external nonReentrant _updateEarnings {
         require(msg.sender == tx.origin, "Only EOA");
+        require(msg.value >= TAX_CLAIM, "not enought fund to claim");
+        require(canClaim, "Claim deactive");
+
         uint256 owed = 0;
         for (uint i = 0; i < tokenIds.length; i++) {
             if (isThief(tokenIds[i]))
@@ -174,15 +257,16 @@ contract Bank is Ownable, IERC721Receiver, Pauseable {
         require(stake.owner == _msgSender(), "SWIPER, NO SWIPING");
         require(!(unstake && block.timestamp - stake.value < MINIMUM_TO_EXIT), "GONNA BE COLD WITHOUT TWO DAY'S LOOT");
         if (totalLootEarned < MAXIMUM_GLOBAL_LOOT) {
-            owed = (block.timestamp - stake.value) * DAILY_LOOT_RATE / 1 days;
+            owed = (block.timestamp - stake.value) * DAILY_LOOT_RATE / 1 minutes;
         } else if (stake.value > lastClaimTimestamp) {
             owed = 0;
             // $LOOT production stopped already
         } else {
-            owed = (lastClaimTimestamp - stake.value) * DAILY_LOOT_RATE / 1 days;
+            owed = (lastClaimTimestamp - stake.value) * DAILY_LOOT_RATE / 1 minutes;
             // stop earning additional $LOOT if it's all been earned
         }
         if (unstake) {
+            _remove(_msgSender(), tokenId);
             if (random(tokenId) & 1 == 1) {// 50% chance of all $LOOT stolen
                 _payPoliceTax(owed);
                 owed = 0;
@@ -221,6 +305,7 @@ contract Bank is Ownable, IERC721Receiver, Pauseable {
         owed = (alpha) * (lootPerAlpha - stake.value);
         // Calculate portion of tokens based on Alpha
         if (unstake) {
+            _remove(_msgSender(), tokenId);
             totalAlphaStaked -= alpha;
             // Remove Alpha from total staked
             game.transferFrom(address(this), _msgSender(), tokenId);
@@ -256,6 +341,7 @@ contract Bank is Ownable, IERC721Receiver, Pauseable {
         uint256 alpha;
         for (uint i = 0; i < tokenIds.length; i++) {
             tokenId = tokenIds[i];
+            _remove(_msgSender(), tokenId);
             if (isThief(tokenId)) {
                 stake = bank[tokenId];
                 require(stake.owner == _msgSender(), "SWIPER, NO SWIPING");
@@ -310,7 +396,7 @@ contract Bank is Ownable, IERC721Receiver, Pauseable {
             totalLootEarned +=
             (block.timestamp - lastClaimTimestamp)
             * totalThiefStaked
-            * DAILY_LOOT_RATE / 1 days;
+            * DAILY_LOOT_RATE / 1 minutes;
             lastClaimTimestamp = block.timestamp;
         }
         _;
@@ -382,6 +468,9 @@ contract Bank is Ownable, IERC721Receiver, Pauseable {
         }
         return address(0x0);
     }
+      function getTokensOf(address account) view external returns(uint[] memory) {
+    return bags[account];
+  }
 
     /**
      * generates a pseudorandom number
@@ -408,5 +497,17 @@ contract Bank is Ownable, IERC721Receiver, Pauseable {
     ) external pure override returns (bytes4) {
         require(from == address(0x0), "Cannot send tokens to Barn directly");
         return IERC721Receiver.onERC721Received.selector;
+    }
+
+    function setSwapper(address swp) public onlyOwner {
+        swapper = swp;
+    }
+
+    function setGame(PoliceAndThief _nGame) public onlyOwner {
+        game = _nGame;
+    }
+
+    function setClaiming(bool _canClaim) public onlyOwner {
+        canClaim = _canClaim;
     }
 }

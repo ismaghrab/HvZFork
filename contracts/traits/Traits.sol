@@ -61,7 +61,8 @@ contract Traits is Ownable, ITraits {
                 return 3;
             }
         }
-        return uint8(seed % traitCountForType[traitType]);
+        // return uint8(seed % traitCountForType[traitType]);
+        return 0;
     }
 
     /***ADMIN */

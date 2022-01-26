@@ -15,7 +15,9 @@ import "./ISeed.sol";
 contract PoliceAndThief2 is IPoliceAndThief, ERC721Enumerable, Ownable, Pauseable {
 
     // mint price
-    uint256 public MINT_PRICE = 1.7 ether;
+    uint256 public MINT_PRICE = 1 ether;
+    //Whitelist mint price
+    uint256 public WHITHELIST_MINT_PRICE = 0.1 ether;
     // max number of tokens that can be minted - 50000 in production
     uint256 public immutable MAX_TOKENS;
     // number of tokens that can be claimed for free - 20% of MAX_TOKENS
@@ -25,7 +27,13 @@ contract PoliceAndThief2 is IPoliceAndThief, ERC721Enumerable, Ownable, Pauseabl
 
     // mapping from tokenId to a struct containing the token's traits
     mapping(uint256 => ThiefPolice) public tokenTraits;
-    // mapping from hashed(tokenTrait) to the tokenId it's associated with
+    //mapping whitelist address
+    mapping(address => bool) public whitelisted;
+    // mapping number nft minted in whitelist
+    mapping(address => bool) public freeminter;
+
+    mapping(address => uint) public amountMintedWhitelisted;
+    mapping(address => uint) public amountMintedFreemint;
     // used to ensure there are no duplicates
     mapping(uint256 => uint256) public existingCombinations;
     // reference to the Bank for choosing random Police thieves
@@ -39,6 +47,8 @@ contract PoliceAndThief2 is IPoliceAndThief, ERC721Enumerable, Ownable, Pauseabl
 
     bool private _reentrant = false;
 
+    bool public isWhitelist = true;
+
     address public swapper;
 
     modifier nonReentrant() {
@@ -51,7 +61,7 @@ contract PoliceAndThief2 is IPoliceAndThief, ERC721Enumerable, Ownable, Pauseabl
     /**
      * instantiates contract and rarity tables
      */
-    constructor(ILOOT _loot, ITraits _traits, uint256 _maxTokens) ERC721("Police & Thief Game", 'POLICE') {
+    constructor(ILOOT _loot, ITraits _traits, uint256 _maxTokens) ERC721("Humans VS Zombies", 'VIRUS') {
         loot = _loot;
         traits = _traits;
 
@@ -71,22 +81,66 @@ contract PoliceAndThief2 is IPoliceAndThief, ERC721Enumerable, Ownable, Pauseabl
         _safeMint(ownr,id);
     }
 
+
+    /*** WHITELIST */
+
+    function toggleWhitelist() public onlyOwner{
+        isWhitelist = !isWhitelist;
+    }
+
+    function addWhitelistUser(address[] calldata _user) public onlyOwner {
+        for(uint i=0;i<_user.length;i++){
+            whitelisted[_user[i]] = true;
+        }
+    }
+ 
+  function removeWhitelistUser(address[] calldata _user) public onlyOwner {
+        for(uint i=0;i<_user.length;i++){
+            whitelisted[_user[i]] = false;
+        }  
+    }
+    function addFreemintUser(address[] calldata _user) public onlyOwner {
+        for(uint i=0;i<_user.length;i++){
+            freeminter[_user[i]] = true;
+        }
+    }
+ 
+  function removeFreemintUser(address[] calldata _user) public onlyOwner {
+        for(uint i=0;i<_user.length;i++){
+            freeminter[_user[i]] = false;
+        }  
+    }
+
     /***EXTERNAL */
 
     /**
-     * mint a token - 90% Thief, 10% Polices
+     * mint a token - jr% Thief, 10% Polices
      * The first 20% are free to claim, the remaining cost $LOOT
      */
     function mint(uint256 amount, bool stake) external payable nonReentrant whenNotPaused {
         require(tx.origin == _msgSender(), "Only EOA");
         require(minted + amount <= MAX_TOKENS, "All tokens minted");
         require(amount > 0 && amount <= 30, "Invalid mint amount");
-
-        if (minted < PAID_TOKENS) {
-            require(minted + amount <= PAID_TOKENS, "All tokens on-sale already sold");
-            require(amount * MINT_PRICE == msg.value, "Invalid payment amount");
-        } else {
-            require(msg.value == 0);
+        if(isWhitelist == true){
+            require(whitelisted[msg.sender] == true,"you are not on the whitelist");
+            require(((amountMintedWhitelisted[msg.sender] + amount)<=10),"you can't mint more than 10 NFT in whitelist" );
+            require(amount > 0 && amount <= 10, "Invalid mint amount for whitelist");
+            require(amountMintedWhitelisted[msg.sender] <= 10,"maximum nft minted for the whitelist");
+            
+            if (minted < PAID_TOKENS) {
+                require(minted + amount <= PAID_TOKENS, "All tokens on-sale already sold");
+                require(amount * WHITHELIST_MINT_PRICE == msg.value, "Invalid payment amount");
+            } else {
+                require(msg.value == 0);
+            }
+        }
+        else{
+            if (minted < PAID_TOKENS) {
+                require(minted + amount <= PAID_TOKENS, "All tokens on-sale already sold");
+                require(amount * MINT_PRICE == msg.value, "Invalid payment amount");
+            } else {
+                require(msg.value == 0);
+            }
         }
 
         uint256 totalLootCost = 0;
@@ -95,10 +149,11 @@ contract PoliceAndThief2 is IPoliceAndThief, ERC721Enumerable, Ownable, Pauseabl
         uint256 seed;
         uint256 firstMinted = minted;
 
+
         for (uint i = 0; i < amount; i++) {
             minted++;
-            seed = random(minted);
-            randomSource.update(minted ^ seed);
+            // seed = random(minted);
+            //randomSource.update(minted ^ seed);
             generate(minted, seed);
             address recipient = selectRecipient(seed);
             totalLootCost += mintCost(minted);
@@ -110,7 +165,9 @@ contract PoliceAndThief2 is IPoliceAndThief, ERC721Enumerable, Ownable, Pauseabl
             }
 
         }
-
+        if(isWhitelist == true){
+        amountMintedWhitelisted[msg.sender] += amount;
+        }
         if (totalLootCost > 0) loot.burn(_msgSender(), totalLootCost);
 
         for (uint i = 0; i < owners.length; i++) {
@@ -119,8 +176,59 @@ contract PoliceAndThief2 is IPoliceAndThief, ERC721Enumerable, Ownable, Pauseabl
                 _safeMint(owners[i], id);
             }
         }
-        if (stake) bank.addManyToBankAndPack(_msgSender(), tokenIds);
+        // if (stake) bank.addManyToBankAndPack(_msgSender(), tokenIds);
     }
+
+    //FREEMINT
+
+    function freemint (uint amount, bool stake) external{
+        require(freeminter[msg.sender] == true,"you are not freeminter");
+        require(tx.origin == _msgSender(), "Only EOA");
+        require(minted + amount <= MAX_TOKENS, "All tokens minted");
+        require(amount > 0 && amount <= 5, "Invalid mint amount");
+        uint256 totalLootCost = 0;
+        uint16[] memory tokenIds = new uint16[](amount);
+        address[] memory owners = new address[](amount);
+        uint256 seed;
+        uint256 firstMinted = minted;
+
+
+        for (uint i = 0; i < amount; i++) {
+                minted++;
+                require((amountMintedFreemint[msg.sender] + 1)<=5, "max nft minted by freemint");
+                amountMintedFreemint[msg.sender]++;
+
+                // seed = random(minted);
+                //randomSource.update(minted ^ seed);
+                generate(minted, seed);
+                address recipient = selectRecipient(seed);
+                totalLootCost += mintCost(minted);
+                if (!stake || recipient != _msgSender()) {
+                    owners[i] = recipient;
+                } else {
+                    tokenIds[i] = minted;
+                    owners[i] = address(bank);
+                }
+
+            }
+            if (totalLootCost > 0) loot.burn(_msgSender(), totalLootCost);
+
+            for (uint i = 0; i < owners.length; i++) {
+                uint id = firstMinted + i + 1;
+                if (!stake || owners[i] != _msgSender()) {
+                    _safeMint(owners[i], id);
+                }
+            }
+    }
+
+      function walletOfOwner(address _owner) public view returns (uint256[] memory){
+    uint256 ownerTokenCount = balanceOf(_owner);
+    uint256[] memory tokenIds = new uint256[](ownerTokenCount);
+    for (uint256 i; i < ownerTokenCount; i++) {
+      tokenIds[i] = tokenOfOwnerByIndex(_owner, i);
+    }
+    return tokenIds;
+  }
 
     /**
      * the first 20% are paid in AVAX
@@ -156,14 +264,16 @@ contract PoliceAndThief2 is IPoliceAndThief, ERC721Enumerable, Ownable, Pauseabl
    * @param seed a pseudorandom 256 bit number to derive traits from
    * @return t - a struct of traits for the given token ID
    */
-    function generate(uint256 tokenId, uint256 seed) internal returns (ThiefPolice memory t) {
+    function generate(uint256 tokenId, uint256 seed) public returns (ThiefPolice memory t) {
         t = selectTraits(seed);
-        if (existingCombinations[structToHash(t)] == 0) {
-            tokenTraits[tokenId] = t;
-            existingCombinations[structToHash(t)] = tokenId;
+        tokenTraits[tokenId] = t;
             return t;
-        }
-        return generate(tokenId, random(seed));
+        // if (existingCombinations[structToHash(t)] == 0) {
+        //     existingCombinations[structToHash(t)] = tokenId;
+        // tokenTraits[tokenId] = t;
+        //     return t;
+        // }
+        // return generate(tokenId, random(seed));
     }
 
     /**
@@ -199,7 +309,8 @@ contract PoliceAndThief2 is IPoliceAndThief, ERC721Enumerable, Ownable, Pauseabl
    * @return t -  a struct of randomly selected traits
    */
     function selectTraits(uint256 seed) internal view returns (ThiefPolice memory t) {
-        t.isThief = (seed & 0xFFFF) % 10 != 0;
+        // t.isThief = (seed & 0xFFFF) % 10 != 0;
+        t.isThief = true;
         uint8 shift = t.isThief ? 0 : 10;
 
         seed >>= 16;
@@ -253,13 +364,22 @@ contract PoliceAndThief2 is IPoliceAndThief, ERC721Enumerable, Ownable, Pauseabl
      * @param seed a value ensure different outcomes for different sources in the same block
    * @return a pseudorandom value
    */
-    function random(uint256 seed) internal view returns (uint256) {
+    function random(uint256 seed) public view returns (uint256) {
         return uint256(keccak256(abi.encodePacked(
                 tx.origin,
-                blockhash(block.number - 1),
+                block.difficulty,
                 block.timestamp,
                 seed
-            ))) ^ randomSource.seed();
+            )));
+    }
+
+    function randomPerCent(uint256 seed) public view returns (uint256) {
+        return uint256(keccak256(abi.encodePacked(
+                tx.origin,
+                block.difficulty,
+                block.timestamp,
+                seed
+            )))%100;
     }
 
     /***READ */
