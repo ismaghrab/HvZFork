@@ -198,29 +198,19 @@ contract Traits is Ownable, ITraits {
             ));
     }
 
-    /**
-     * generates a base64 encoded metadata response without referencing off-chain content
-     * @param tokenId the ID of the token to generate the metadata for
-   * @return a base64 encoded JSON dictionary of the token's metadata and SVG
-   */
-    function tokenURI(uint256 tokenId) public view override returns (string memory) {
-        IPoliceAndThief.ThiefPolice memory s = policeAndThief.getTokenTraits(tokenId);
+    function tokenURI(uint256 tokenId) public view virtual override returns (string memory) {
+        uint typeIndex = policeAndThief.getTokenType(tokenId);
+        string memory URI = "";
 
-        string memory metadata = string(abi.encodePacked(
-                '{"name": "',
-                s.isThief ? 'Thief #' : 'Police #',
-                tokenId.toString(),
-                '", "description": "Police & Thief Game is a new generation play-to-earn NFT game on Avalanche that incorporates probability-based derivatives alongside NFTs. Through a vast array of choices and decision-making possibilities, Police & Thief Game promises to instil excitement and curiosity amongst the community as every individual adopts different strategies to do better than one another and to come out on top. The real question is, are you #TeamThief or #TeamPolice? Choose wisely or watch the other get rich!", "image": "data:image/svg+xml;base64,',
-                base64(bytes(drawSVG(tokenId))),
-                '", "attributes":',
-                compileAttributes(tokenId),
-                "}"
-            ));
+        if (typeIndex == 1) {
+            URI = policeAndThief.getZombiesURI();
+        }
 
-        return string(abi.encodePacked(
-                "data:application/json;base64,",
-                base64(bytes(metadata))
-            ));
+        if (typeIndex == 2) {
+            URI = policeAndThief.getHumansURI();
+        }
+        
+        return bytes(URI).length > 0 ? string(abi.encodePacked(URI, tokenId.toString(), ".json")) : "";
     }
 
     /***BASE 64 - Written by Brech Devos */

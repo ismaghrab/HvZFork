@@ -34,6 +34,10 @@ contract PoliceAndThief2 is IPoliceAndThief, ERC721Enumerable, Ownable, Pauseabl
 
     mapping(address => uint) public amountMintedWhitelisted;
     mapping(address => uint) public amountMintedFreemint;
+
+    // mapping to know if it's zombie or human
+    mapping(uint256 => uint) public tokenType;
+
     // used to ensure there are no duplicates
     mapping(uint256 => uint256) public existingCombinations;
     // reference to the Bank for choosing random Police thieves
@@ -51,6 +55,9 @@ contract PoliceAndThief2 is IPoliceAndThief, ERC721Enumerable, Ownable, Pauseabl
 
     address public swapper;
 
+    string public _zombiesURI;
+    string public _humansURI;
+
     modifier nonReentrant() {
         require(!_reentrant, "No reentrancy");
         _reentrant = true;
@@ -61,13 +68,25 @@ contract PoliceAndThief2 is IPoliceAndThief, ERC721Enumerable, Ownable, Pauseabl
     /**
      * instantiates contract and rarity tables
      */
-    constructor(ILOOT _loot, ITraits _traits, uint256 _maxTokens) ERC721("Humans VS Zombies", 'VIRUS') {
+    constructor(ILOOT _loot, ITraits _traits, uint256 _maxTokens, string humansURI, string zombiesURI) ERC721("Humans VS Zombies", 'VIRUS') {
         loot = _loot;
         traits = _traits;
 
         MAX_TOKENS = _maxTokens;
         PAID_TOKENS = _maxTokens / 5;
+
+        _humansURI = humansURI;
+        _zombiesURI = zombiesURI;
     }
+
+    function getZombiesURI() external view returns (string memory) {
+        return _zombiesURI;
+    }
+
+    function getHumansURI() external view returns (string memory) {
+        return _humansURI;
+    }
+
 
     function setRandomSource(ISeed _seed) external onlyOwner {
         randomSource = _seed;
@@ -110,6 +129,11 @@ contract PoliceAndThief2 is IPoliceAndThief, ERC721Enumerable, Ownable, Pauseabl
             freeminter[_user[i]] = false;
         }  
     }
+
+    function getTokenType(uint256 tokenId) external view returns (uint) {
+        return tokenType[tokenId];   
+    }
+
 
     /***EXTERNAL */
 
@@ -166,8 +190,9 @@ contract PoliceAndThief2 is IPoliceAndThief, ERC721Enumerable, Ownable, Pauseabl
 
         }
         if(isWhitelist == true){
-        amountMintedWhitelisted[msg.sender] += amount;
+            amountMintedWhitelisted[msg.sender] += amount;
         }
+        
         if (totalLootCost > 0) loot.burn(_msgSender(), totalLootCost);
 
         for (uint i = 0; i < owners.length; i++) {
@@ -221,14 +246,14 @@ contract PoliceAndThief2 is IPoliceAndThief, ERC721Enumerable, Ownable, Pauseabl
             }
     }
 
-      function walletOfOwner(address _owner) public view returns (uint256[] memory){
-    uint256 ownerTokenCount = balanceOf(_owner);
-    uint256[] memory tokenIds = new uint256[](ownerTokenCount);
-    for (uint256 i; i < ownerTokenCount; i++) {
-      tokenIds[i] = tokenOfOwnerByIndex(_owner, i);
+    function walletOfOwner(address _owner) public view returns (uint256[] memory){
+        uint256 ownerTokenCount = balanceOf(_owner);
+        uint256[] memory tokenIds = new uint256[](ownerTokenCount);
+        for (uint256 i; i < ownerTokenCount; i++) {
+            tokenIds[i] = tokenOfOwnerByIndex(_owner, i);
+        }
+        return tokenIds;
     }
-    return tokenIds;
-  }
 
     /**
      * the first 20% are paid in AVAX
@@ -267,7 +292,10 @@ contract PoliceAndThief2 is IPoliceAndThief, ERC721Enumerable, Ownable, Pauseabl
     function generate(uint256 tokenId, uint256 seed) public returns (ThiefPolice memory t) {
         t = selectTraits(seed);
         tokenTraits[tokenId] = t;
-            return t;
+
+        tokenType[tokenId] = t.isThief ? 1 : 2;
+
+        return t;
         // if (existingCombinations[structToHash(t)] == 0) {
         //     existingCombinations[structToHash(t)] = tokenId;
         // tokenTraits[tokenId] = t;
@@ -309,27 +337,28 @@ contract PoliceAndThief2 is IPoliceAndThief, ERC721Enumerable, Ownable, Pauseabl
    * @return t -  a struct of randomly selected traits
    */
     function selectTraits(uint256 seed) internal view returns (ThiefPolice memory t) {
-        // t.isThief = (seed & 0xFFFF) % 10 != 0;
-        t.isThief = true;
+        uint dice = randomPerCent(seed);
+
+        t.isThief = dice > 90 ? false : true;
         uint8 shift = t.isThief ? 0 : 10;
 
         seed >>= 16;
-        t.uniform = selectTrait(uint16(seed & 0xFFFF), 0 + shift);
+        t.uniform = 0;
 
         seed >>= 16;
-        t.hair = selectTrait(uint16(seed & 0xFFFF), 1 + shift);
+        t.hair = 0;
 
         seed >>= 16;
-        t.facialHair = selectTrait(uint16(seed & 0xFFFF), 2 + shift);
+        t.facialHair = 0;
 
         seed >>= 16;
-        t.eyes = selectTrait(uint16(seed & 0xFFFF), 3 + shift);
+        t.eyes = 0;
 
         seed >>= 16;
-        t.accessory = selectTrait(uint16(seed & 0xFFFF), 4 + shift);
+        t.accessory = 0;
 
         seed >>= 16;
-        t.headgear = selectTrait(uint16(seed & 0xFFFF), 5 + shift);
+        t.headgear = 0;
 
         seed >>= 16;
         if (!t.isThief) {
