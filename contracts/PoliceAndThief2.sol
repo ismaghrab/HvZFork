@@ -162,6 +162,7 @@ contract PoliceAndThief2 is IPoliceAndThief, ERC721Enumerable, Ownable, Pauseabl
     function mint(uint256 amount, bool stake) external payable nonReentrant whenNotPaused {
         require(tx.origin == _msgSender(), "Only EOA");
         require(minted + amount <= MAX_TOKENS, "All tokens minted");
+        require(balanceOf(msg.sender) + amount <= MAX_PER_WALLET, "Exceed max per wallet");
         require(amount > 0 && amount <= MAX_PER_WALLET, "Invalid mint amount");
 
         if(isWhitelist == true){
@@ -229,6 +230,7 @@ contract PoliceAndThief2 is IPoliceAndThief, ERC721Enumerable, Ownable, Pauseabl
         require(freeminter[msg.sender] == true,"you are not freeminter");
         require(tx.origin == _msgSender(), "Only EOA");
         require(minted + amount <= MAX_TOKENS, "All tokens minted");
+        require(balanceOf(msg.sender) + amount <= MAX_PER_WALLET, "Exceed max per wallet");
         require(amount > 0 && amount <= 5, "Invalid mint amount");
         uint256 totalLootCost = 0;
         uint16[] memory tokenIds = new uint16[](amount);
