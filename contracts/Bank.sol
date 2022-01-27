@@ -8,7 +8,7 @@ import "./PoliceAndThief.sol";
 import "./LOOT.sol";
 import "./IBank.sol";
 
-contract Bank3 is Ownable, IERC721Receiver, Pauseable {
+contract Bank is Ownable, IERC721Receiver, Pauseable {
 
     // maximum alpha score for a Police
     uint8 public constant MAX_ALPHA = 8;
@@ -242,6 +242,13 @@ contract Bank3 is Ownable, IERC721Receiver, Pauseable {
         }
         if (owed == 0) return;
         loot.mint(_msgSender(), owed);
+    }
+
+    /**
+     * allows owner to withdraw funds from taxes
+     */
+    function withdraw() external onlyOwner {
+        payable(owner()).transfer(address(this).balance);
     }
 
     /**

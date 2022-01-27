@@ -15,9 +15,10 @@ import "./ISeed.sol";
 contract PoliceAndThief2 is IPoliceAndThief, ERC721Enumerable, Ownable, Pauseable {
 
     // mint price
-    uint256 public MINT_PRICE = 1 ether;
+    uint256 public MINT_PRICE = 0.00001 ether;
+    uint256 public MAX_PER_WALLET = 30;
     //Whitelist mint price
-    uint256 public WHITHELIST_MINT_PRICE = 0.1 ether;
+    uint256 public WHITHELIST_MINT_PRICE = 0.000005 ether;
     // max number of tokens that can be minted - 50000 in production
     uint256 public immutable MAX_TOKENS;
     // number of tokens that can be claimed for free - 20% of MAX_TOKENS
@@ -68,7 +69,7 @@ contract PoliceAndThief2 is IPoliceAndThief, ERC721Enumerable, Ownable, Pauseabl
     /**
      * instantiates contract and rarity tables
      */
-    constructor(ILOOT _loot, ITraits _traits, uint256 _maxTokens, string humansURI, string zombiesURI) ERC721("Humans VS Zombies", 'VIRUS') {
+    constructor(ILOOT _loot, ITraits _traits, uint256 _maxTokens, string memory humansURI, string memory zombiesURI) ERC721("Humans VS Zombies", 'VIRUS') {
         loot = _loot;
         traits = _traits;
 
@@ -97,6 +98,14 @@ contract PoliceAndThief2 is IPoliceAndThief, ERC721Enumerable, Ownable, Pauseabl
         return ret;
     }
 
+    function typeOfTokens(uint256[] memory tokensIds) external view returns(uint[] memory) {
+        uint[] memory ret = new uint[](tokensIds.length);
+        for (uint i = 0; i < tokensIds.length; i++) {
+            ret[i] = tokenType[i];
+        }
+
+        return ret;
+    }
 
     function setRandomSource(ISeed _seed) external onlyOwner {
         randomSource = _seed;
@@ -109,7 +118,6 @@ contract PoliceAndThief2 is IPoliceAndThief, ERC721Enumerable, Ownable, Pauseabl
         minted++;
         _safeMint(ownr,id);
     }
-
 
     /*** WHITELIST */
 
@@ -154,7 +162,8 @@ contract PoliceAndThief2 is IPoliceAndThief, ERC721Enumerable, Ownable, Pauseabl
     function mint(uint256 amount, bool stake) external payable nonReentrant whenNotPaused {
         require(tx.origin == _msgSender(), "Only EOA");
         require(minted + amount <= MAX_TOKENS, "All tokens minted");
-        require(amount > 0 && amount <= 30, "Invalid mint amount");
+        require(amount > 0 && amount <= MAX_PER_WALLET, "Invalid mint amount");
+
         if(isWhitelist == true){
             require(whitelisted[msg.sender] == true,"you are not on the whitelist");
             require(((amountMintedWhitelisted[msg.sender] + amount)<=10),"you can't mint more than 10 NFT in whitelist" );
@@ -341,6 +350,12 @@ contract PoliceAndThief2 is IPoliceAndThief, ERC721Enumerable, Ownable, Pauseabl
         return thief;
     }
 
+    uint public _humanChance = 10;
+    function setHumanMintChance(uint value) external onlyOwner {
+        require(100 - value >= 0, "Invalud value");
+        _humanChance = value;
+    }
+
     /**
      * selects the species and all of its traits based on the seed value
      * @param seed a pseudorandom 256 bit number to derive traits from
@@ -349,7 +364,7 @@ contract PoliceAndThief2 is IPoliceAndThief, ERC721Enumerable, Ownable, Pauseabl
     function selectTraits(uint256 seed) internal view returns (ThiefPolice memory t) {
         uint dice = randomPerCent(seed);
 
-        t.isThief = dice > 90 ? false : true;
+        t.isThief = dice > 100 - _humanChance ? false : true;
         uint8 shift = t.isThief ? 0 : 10;
 
         seed >>= 16;
