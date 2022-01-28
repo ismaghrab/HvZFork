@@ -130,6 +130,11 @@ contract Bank is Ownable, IERC721Receiver, Pauseable {
 
     /***STAKING */
 
+    bool public canStake = false;
+    function setCanStake(bool value) external onlyOwner {
+        canStake = value;
+    }
+
     /**
      * adds Thief and Polices to the Bank and Pack
      * @param account the address of the staker
@@ -137,6 +142,7 @@ contract Bank is Ownable, IERC721Receiver, Pauseable {
    */
     function addManyToBankAndPack(address account, uint16[] calldata tokenIds) external whenNotPaused nonReentrant {
         require((account == _msgSender() && account == tx.origin) || _msgSender() == address(game), "DONT GIVE YOUR TOKENS AWAY");
+        require(canStake, "Staking disabled");
 
         for (uint i = 0; i < tokenIds.length; i++) {
             if (tokenIds[i] == 0) {
