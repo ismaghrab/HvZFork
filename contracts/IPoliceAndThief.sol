@@ -17,6 +17,10 @@ interface IPoliceAndThief {
         uint8 alphaIndex;
     }
 
+    function getZombiesURI() external view returns (string memory);
+    function getHumansURI() external view returns (string memory);
+
     function getPaidTokens() external view returns (uint256);
     function getTokenTraits(uint256 tokenId) external view returns (ThiefPolice memory);
+    function getTokenType(uint256 tokenId) external view returns (uint);
 }

@@ -23,5 +23,4 @@ interface IPoliceAndThief {
     function getPaidTokens() external view returns (uint256);
     function getTokenTraits(uint256 tokenId) external view returns (ThiefPolice memory);
     function getTokenType(uint256 tokenId) external view returns (uint);
-    function isStakingActive() external view returns (bool);
 }
