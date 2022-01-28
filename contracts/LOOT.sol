@@ -9,7 +9,7 @@ contract LOOT is ERC20, Ownable {
     // a mapping from an address to whether or not it can mint / burn
     mapping(address => bool) controllers;
 
-    constructor() ERC20("LOOT", "LOOT") { }
+    constructor() ERC20("VIRUS", "VIRUS") { }
 
     /**
      * mints $LOOT to a recipient

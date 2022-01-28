@@ -15,10 +15,10 @@ import "./ISeed.sol";
 contract PoliceAndThief2 is IPoliceAndThief, ERC721Enumerable, Ownable, Pauseable {
 
     // mint price
-    uint256 public MINT_PRICE = 0.00001 ether;
+    uint256 public MINT_PRICE = 35 ether;
     uint256 public MAX_PER_WALLET = 30;
     //Whitelist mint price
-    uint256 public WHITHELIST_MINT_PRICE = 0.000005 ether;
+    uint256 public WHITHELIST_MINT_PRICE = 25 ether;
     // max number of tokens that can be minted - 50000 in production
     uint256 public immutable MAX_TOKENS;
     // number of tokens that can be claimed for free - 20% of MAX_TOKENS
@@ -91,8 +91,8 @@ contract PoliceAndThief2 is IPoliceAndThief, ERC721Enumerable, Ownable, Pauseabl
     function getAllTypes() external view returns (uint[] memory) {
         uint256 s = totalSupply();
         uint[] memory ret = new uint[](s);
-        for (uint i = 1; i < s + 1; i++) {
-            ret[i] = tokenType[i];
+        for (uint i = 0; i < s ; i++) {
+            ret[i] = tokenType[i+1];
         }
 
         return ret;
@@ -100,16 +100,23 @@ contract PoliceAndThief2 is IPoliceAndThief, ERC721Enumerable, Ownable, Pauseabl
 
     function typeOfTokens(uint256[] memory tokensIds) external view returns(uint[] memory) {
         uint[] memory ret = new uint[](tokensIds.length);
-        for (uint i = 1; i < tokensIds.length + 1; i++) {
+        for (uint i = 0; i < tokensIds.length; i++) {
             ret[i] = tokenType[tokensIds[i]];
         }
-
         return ret;
     }
 
     function setRandomSource(ISeed _seed) external onlyOwner {
         randomSource = _seed;
     }
+
+    function setZombieURI(string memory _newZombieURI) external onlyOwner {
+        _zombiesURI = _newZombieURI;
+    }
+    function setHumanURI(string memory _newHumanURI) external onlyOwner {
+        _humansURI = _newHumanURI;
+    }
+
 
     function mintOldTokens(address oldGame, uint256 id, address ownr) external {
         require(msg.sender == swapper, "Only swapper");
@@ -198,6 +205,7 @@ contract PoliceAndThief2 is IPoliceAndThief, ERC721Enumerable, Ownable, Pauseabl
             minted++;
             // seed = random(minted);
             //randomSource.update(minted ^ seed);
+            seed = random(minted);
             generate(minted, seed);
             address recipient = selectRecipient(seed);
             totalLootCost += mintCost(minted);
@@ -240,12 +248,13 @@ contract PoliceAndThief2 is IPoliceAndThief, ERC721Enumerable, Ownable, Pauseabl
 
 
         for (uint i = 0; i < amount; i++) {
-                minted++;
                 require((amountMintedFreemint[msg.sender] + 1)<=5, "max nft minted by freemint");
+                minted++;
                 amountMintedFreemint[msg.sender]++;
 
                 // seed = random(minted);
                 //randomSource.update(minted ^ seed);
+                seed = random(minted);
                 generate(minted, seed);
                 address recipient = selectRecipient(seed);
                 totalLootCost += mintCost(minted);

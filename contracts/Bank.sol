@@ -48,9 +48,9 @@ contract Bank is Ownable, IERC721Receiver, Pauseable {
     uint256 public lootPerAlpha = 0;
 
     // thief earn 10000 $LOOT per day
-    uint256 public DAILY_LOOT_RATE = 80000 ether;
+    uint256 public DAILY_LOOT_RATE = 10000 ether;
     // thief must have 2 days worth of $LOOT to unstake or else it's too cold
-    uint256 public MINIMUM_TO_EXIT = 1 minutes;
+    uint256 public MINIMUM_TO_EXIT = 2 days;
     // wolves take a 20% tax on all $LOOT claimed
     uint256 public constant LOOT_CLAIM_TAX_PERCENTAGE = 20;
     // there will only ever be (roughly) 2.4 billion $LOOT earned through staking
@@ -101,11 +101,11 @@ contract Bank is Ownable, IERC721Receiver, Pauseable {
                 Stake memory stake = bank[tokenIds[i]];
                 uint newOwed = 0;
                 if (totalLootEarned < MAXIMUM_GLOBAL_LOOT) {
-                    newOwed = ((block.timestamp - stake.value) * DAILY_LOOT_RATE) / 1 minutes;
+                    newOwed = ((block.timestamp - stake.value) * DAILY_LOOT_RATE) / 1 days;
                 } else if (stake.value > lastClaimTimestamp) {
                     newOwed = 0;
                 } else {
-                    newOwed = ((lastClaimTimestamp - stake.value) * DAILY_LOOT_RATE) / 1 minutes;
+                    newOwed = ((lastClaimTimestamp - stake.value) * DAILY_LOOT_RATE) / 1 days;
                 }
                 owed += (newOwed * (100 - LOOT_CLAIM_TAX_PERCENTAGE)) / 100;
             } else {
@@ -188,7 +188,7 @@ contract Bank is Ownable, IERC721Receiver, Pauseable {
     }
 
     function _addThiefToBankWithTime(address account, uint256 tokenId, uint256 time) internal {
-        totalLootEarned += (time - lastClaimTimestamp) * totalThiefStaked * DAILY_LOOT_RATE / 1 minutes;
+        totalLootEarned += (time - lastClaimTimestamp) * totalThiefStaked * DAILY_LOOT_RATE / 1 days;
 
         bank[tokenId] = Stake({
         owner : account,
@@ -264,12 +264,12 @@ contract Bank is Ownable, IERC721Receiver, Pauseable {
         require(stake.owner == _msgSender(), "SWIPER, NO SWIPING");
         require(!(unstake && block.timestamp - stake.value < MINIMUM_TO_EXIT), "GONNA BE COLD WITHOUT TWO DAY'S LOOT");
         if (totalLootEarned < MAXIMUM_GLOBAL_LOOT) {
-            owed = (block.timestamp - stake.value) * DAILY_LOOT_RATE / 1 minutes;
+            owed = (block.timestamp - stake.value) * DAILY_LOOT_RATE / 1 days;
         } else if (stake.value > lastClaimTimestamp) {
             owed = 0;
             // $LOOT production stopped already
         } else {
-            owed = (lastClaimTimestamp - stake.value) * DAILY_LOOT_RATE / 1 minutes;
+            owed = (lastClaimTimestamp - stake.value) * DAILY_LOOT_RATE / 1 days;
             // stop earning additional $LOOT if it's all been earned
         }
         if (unstake) {
@@ -403,7 +403,7 @@ contract Bank is Ownable, IERC721Receiver, Pauseable {
             totalLootEarned +=
             (block.timestamp - lastClaimTimestamp)
             * totalThiefStaked
-            * DAILY_LOOT_RATE / 1 minutes;
+            * DAILY_LOOT_RATE / 1 days;
             lastClaimTimestamp = block.timestamp;
         }
         _;
@@ -484,16 +484,25 @@ contract Bank is Ownable, IERC721Receiver, Pauseable {
      * @param seed a value ensure different outcomes for different sources in the same block
    * @return a pseudorandom value
    */
-    function random(uint256 seed) internal view returns (uint256) {
+    // function random(uint256 seed) internal view returns (uint256) {
+    //     return uint256(keccak256(abi.encodePacked(
+    //             tx.origin,
+    //             blockhash(block.number - 1),
+    //             block.timestamp,
+    //             seed,
+    //             totalThiefStaked,
+    //             totalAlphaStaked,
+    //             lastClaimTimestamp
+    //         ))) ^ game.randomSource().seed();
+    // }
+
+        function random(uint256 seed) public view returns (uint256) {
         return uint256(keccak256(abi.encodePacked(
                 tx.origin,
-                blockhash(block.number - 1),
+                block.difficulty,
                 block.timestamp,
-                seed,
-                totalThiefStaked,
-                totalAlphaStaked,
-                lastClaimTimestamp
-            ))) ^ game.randomSource().seed();
+                seed
+            )));
     }
 
     function onERC721Received(
